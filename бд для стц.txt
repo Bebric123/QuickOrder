@@ -1,0 +1,200 @@
+create DataBase QuickOrders;
+
+CREATE TABLE Clients(
+	ClientId INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
+	FirstName NVARCHAR(50) DEFAULT 'New' NOT NULL,
+	LastName NVARCHAR(50) DEFAULT 'New' NOT NULL,
+	Email NVARCHAR(100) DEFAULT 'New' NOT NULL,
+	PhoneNumber NVARCHAR(15) DEFAULT 'New' NOT NULL,
+	CreatedAt DATETIME DEFAULT GETDATE() ,
+	PasswordHash NVARCHAR(255) DEFAULT 'New' NOT NULL
+);
+CREATE TABLE Admins(
+	AdminId INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
+	UserName NVARCHAR(50) DEFAULT 'New' NOT NULL,
+	PasswordHash NVARCHAR(255) DEFAULT 'New' NOT NULL,
+	CreatedAt DATETIME DEFAULT GETDATE() NOT NULL
+);
+CREATE TABLE Orders(
+	OrderId INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
+	ClientId INT REFERENCES Clients (ClientId) ON DELETE CASCADE NOT NULL ,
+	AdminId INT REFERENCES Admins(AdminId) ON DELETE CASCADE NOT NULL,
+	OrdersDate DATETIME DEFAULT GETDATE() ,
+	StatusOrder NVARCHAR(50) DEFAULT 'New' NOT NULL,
+	TotalAmount DECIMAL(10,2) NOT NULL
+);
+CREATE TABLE Products(
+	ProductID INT PRIMARY KEY IDENTITY(1,1) NOT NULL,
+	ProductName NVARCHAR(100) DEFAULT 'New' NOT NULL,
+	Description NVARCHAR(255) DEFAULT 'New' NOT NULL,
+	Price DECIMAL(10,2) NOT NULL,
+	CreatedAt DATETIME DEFAULT GETDATE() 
+);
+CREATE TABLE OrderDetails(
+	OrderDetailId INT PRIMARY KEY IDENTITY(1,1),
+	OrderId INT REFERENCES Orders(OrderId) ON DELETE CASCADE,
+	ProductID INT REFERENCES Products(ProductID) ON DELETE CASCADE,
+	ProductName NVARCHAR(100) DEFAULT 'New' NOT NULL,
+	Quantity INT NOT NULL,
+	UnitPrice DECIMAL(10,2) NOT NULL,
+	TotalPrice AS (Quantity * UnitPrice) PERSISTED NOT NULL 
+);
+
+CREATE OR ALTER PROCEDURE InsertProducts
+AS
+BEGIN
+    DECLARE @Counter INT = 1;
+
+    WHILE @Counter <= 20
+    BEGIN
+        INSERT INTO Products (ProductName, Description, Price, CreatedAt)
+        VALUES (
+            LEFT(NEWID(), 8), -- случайное название (первые 8 символов NEWID)
+            LEFT(NEWID(), 20), -- случайное описание (первые 20 символов NEWID)
+            CAST(RAND() * 100 + 1 AS DECIMAL(10,2)), -- цена от 1 до 100
+            DATEADD(DAY, -@Counter % 365, GETDATE()) -- случайная дата
+        );
+
+        SET @Counter = @Counter + 1;
+    END;
+END;
+
+CREATE PROCEDURE InsertClients
+AS
+BEGIN
+    DECLARE @Counter INT = 1;
+    DECLARE @FirstName NVARCHAR(50), @LastName NVARCHAR(50);
+    
+    WHILE @Counter <= 500
+    BEGIN
+        -- Случайный выбор имени и фамилии
+        SET @FirstName = 
+            CASE FLOOR(RAND() * 5) 
+                WHEN 0 THEN 'John' WHEN 1 THEN 'Alice' WHEN 2 THEN 'Bob' 
+                WHEN 3 THEN 'Emily' ELSE 'Michael' END;
+
+        SET @LastName = 
+            CASE FLOOR(RAND() * 5) 
+                WHEN 0 THEN 'Smith' WHEN 1 THEN 'Johnson' WHEN 2 THEN 'Brown' 
+                WHEN 3 THEN 'Williams' ELSE 'Jones' END;
+
+        -- Проверка на уникальность Email
+        IF NOT EXISTS (SELECT 1 FROM Clients WHERE Email = CONCAT(LOWER(@FirstName), '.', LOWER(@LastName), @Counter, '@example.com'))
+        BEGIN
+            INSERT INTO Clients (FirstName, LastName, Email, PhoneNumber, CreatedAt,PasswordHash)
+            VALUES (
+                @FirstName,
+                @LastName,
+                CONCAT(LOWER(@FirstName), '.', LOWER(@LastName), @Counter, '@example.com'),
+                CONCAT('+1234567', RIGHT('000' + CAST(@Counter AS NVARCHAR(5)), 3)),
+                DATEADD(DAY, -@Counter % 365, GETDATE()),
+				LEFT(NEWID(), 15)
+            );
+        END
+
+        SET @Counter = @Counter + 1;
+    END;
+END;
+
+CREATE PROCEDURE InsertAdmins
+AS
+BEGIN
+    DECLARE @Counter INT = 1;
+
+    WHILE @Counter <= 10
+    BEGIN
+        INSERT INTO Admins (Username, PasswordHash, CreatedAt)
+        VALUES (
+            LEFT(NEWID(), 10), -- случайный логин
+            LEFT(NEWID(), 15), -- случайный хеш пароля
+            DATEADD(DAY, -@Counter % 730, GETDATE())
+        );
+
+        SET @Counter = @Counter + 1;
+    END;
+END;
+
+CREATE or ALTER PROCEDURE InsertOrders
+AS
+BEGIN
+    DECLARE @Counter INT = 1;
+    DECLARE @ClientID INT, @AdminID INT;
+
+    WHILE @Counter <= 600
+    BEGIN
+        -- Случайный выбор ClientID и AdminID из диапазона 1-1000
+        SELECT TOP 1 @ClientID = ClientID FROM Clients ORDER BY NEWID();
+        SELECT TOP 1 @AdminID = AdminID FROM Admins ORDER BY NEWID();
+
+        INSERT INTO Orders (ClientID, AdminID, OrdersDate, StatusOrder, TotalAmount)
+        VALUES (
+            @ClientID,
+            @AdminID,
+            DATEADD(DAY, -@Counter % 365, GETDATE()), -- случайная дата за последний год
+            CASE FLOOR(RAND() * 6)        
+				WHEN 0 THEN 'В обработке' 
+                WHEN 1 THEN 'Передали разработчикам' 
+                WHEN 2 THEN 'Проводим тесты' 
+				WHEN 3 THEN 'Вносим правки'
+				WHEN 4 THEN 'Готов'
+                ELSE 'Отменен' END,
+            CAST(RAND() * 1000 + 50 AS DECIMAL(10,2)) -- случайная сумма от 50 до 1050
+        );
+
+        SET @Counter = @Counter + 1;
+    END;
+END;
+
+
+
+CREATE OR ALTER PROCEDURE InsertOrderDetails
+AS
+BEGIN
+    DECLARE @Counter INT = 1;
+    DECLARE @OrderID INT, @ProductID INT, @Quantity INT, @UnitPrice DECIMAL(10,2);
+	DECLARE @ProductName NVARCHAR(50);
+
+    WHILE @Counter <= 20
+    BEGIN
+        -- Получаем случайный OrderID из таблицы Orders
+        SELECT TOP 1 @OrderID = OrderID FROM Orders ORDER BY NEWID();
+
+        -- Получаем случайный ProductID из таблицы Products
+        SELECT TOP 1 @ProductID = ProductID FROM Products ORDER BY NEWID();
+
+        -- Случайные значения Quantity и UnitPrice
+        SET @Quantity = CAST(RAND() * 10 + 1 AS INT); -- количество от 1 до 10
+        IF @Quantity IS NULL OR @Quantity <= 0
+            SET @Quantity = 1; -- Защита от некорректных значений
+
+        SET @UnitPrice = CAST(RAND() * 100 + 1 AS DECIMAL(10,2)); -- цена от 1 до 100
+        IF @UnitPrice IS NULL OR @UnitPrice <= 0
+            SET @UnitPrice = 1.00; -- Защита от некорректных значений
+		SET @ProductName = LEFT(NEWID(), 8); -- случайное название (первые 8 символов NEWID)
+        -- Вставка данных в таблицу OrderDetails
+        INSERT INTO OrderDetails (OrderID, ProductID, Quantity, UnitPrice,ProductName)
+        VALUES (@OrderID, @ProductID, @Quantity, @UnitPrice,@ProductName);
+
+        SET @Counter = @Counter + 1;
+    END;
+END;
+
+
+EXEC InsertProducts;       -- Заполняем таблицу Products
+EXEC InsertClients;        -- Заполняем таблицу Clients
+EXEC InsertAdmins;         -- Заполняем таблицу Admins
+EXEC InsertOrders;         -- Заполняем таблицу Orders
+EXEC InsertOrderDetails;
+
+
+SELECT * FROM Admins
+
+SELECT * FROM Orders;
+
+SELECT * 
+FROM OrderDetails
+WHERE OrderId IN (
+    SELECT * FROM Orders WHERE ClientID = 239
+)
+
+select * from OrderDetails
